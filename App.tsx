@@ -1,14 +1,24 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { CATEGORY_DEFINITIONS } from './constants';
 import CategorySelector from './components/CategorySelector';
 import SkillChart from './components/SkillChart';
 import ProjectManager from './components/ProjectManager';
 import { generateCharacterData, generateCharacterImage, constructImagePrompt, generateSeedNames, analyzeProjectStyle, suggestFolders } from './services/geminiService';
 import { MarkovNameGenerator } from './services/nameGenerator';
-import { PossibleCharacter, TopLevelSchema, Project, SavedCharacter, Folder } from './types';
+import { PossibleCharacter, TopLevelSchema, Project, SavedCharacter, Folder, ProjectSettings } from './types';
 import { Sparkles, RefreshCw, Wand2, Terminal, AlertCircle, Image as ImageIcon, Download, Settings2, Edit3, X, Save, Menu, ChevronLeft, Dna, Dice5 } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
+
+const DEFAULT_PROJECT_SETTINGS: ProjectSettings = {
+  lockedStylePre: '',
+  lockedStylePost: '',
+  useMarkovNameGen: false,
+  markovSeeds: [],
+  markovOrder: 2,
+  markovMinLength: 4,
+  markovMaxLength: 12
+};
 
 const App: React.FC = () => {
   // --- STATE ---
@@ -41,8 +51,44 @@ const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'forge' | 'projects'>('forge');
 
   // Persistence (Projects)
-  const [projects, setProjects] = useState<Project[]>([]);
-  const [activeProjectId, setActiveProjectId] = useState<string | null>(null);
+  const [projects, setProjects] = useState<Project[]>(() => {
+      try {
+          const saved = localStorage.getItem('rpg_forge_projects');
+          if (saved) {
+              const parsed = JSON.parse(saved);
+              // Schema Migration: Ensure all projects have valid settings structure
+              // even if loaded from an older version of the app.
+              return parsed.map((p: any) => ({
+                  ...p,
+                  folders: p.folders || [],
+                  characters: p.characters || [],
+                  settings: { ...DEFAULT_PROJECT_SETTINGS, ...(p.settings || {}) }
+              }));
+          }
+      } catch (e) {
+          console.error("Failed to load projects", e);
+      }
+      
+      // Default Initial Project
+      return [{
+          id: uuidv4(),
+          name: 'Default Project',
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+          folders: [],
+          characters: [],
+          settings: { ...DEFAULT_PROJECT_SETTINGS }
+      }];
+  });
+
+  const [activeProjectId, setActiveProjectId] = useState<string | null>(() => {
+      try {
+          const saved = localStorage.getItem('rpg_forge_active_project_id');
+          if (saved) return saved;
+      } catch (e) {}
+      
+      return null;
+  });
 
   // Prompt Modal
   const [isPromptModalOpen, setIsPromptModalOpen] = useState(false);
@@ -74,47 +120,28 @@ const App: React.FC = () => {
     }
   }, [character]);
 
-  // --- EFFECT: Load/Save Projects ---
-  useEffect(() => {
-    const saved = localStorage.getItem('rpg_forge_projects');
-    if (saved) {
-      try {
-        const parsed = JSON.parse(saved);
-        setProjects(parsed);
-        if (parsed.length > 0 && !activeProjectId) {
-           // Restore last active project or first
-           setActiveProjectId(parsed[0].id);
-        }
-      } catch(e) { console.error("Failed to load projects", e); }
-    } else {
-        // Create default project
-        const defaultProj: Project = {
-            id: uuidv4(),
-            name: 'Default Project',
-            createdAt: Date.now(),
-            updatedAt: Date.now(),
-            folders: [],
-            characters: [],
-            settings: {
-                lockedStylePre: '',
-                lockedStylePost: '',
-                useMarkovNameGen: false,
-                markovSeeds: [],
-                markovOrder: 2,
-                markovMinLength: 4,
-                markovMaxLength: 12
-            }
-        };
-        setProjects([defaultProj]);
-        setActiveProjectId(defaultProj.id);
-    }
-  }, []); // Run once on mount
-
+  // --- EFFECT: Persist Projects ---
   useEffect(() => {
     if (projects.length > 0) {
         localStorage.setItem('rpg_forge_projects', JSON.stringify(projects));
     }
   }, [projects]);
+
+  // --- EFFECT: Persist Active Project ID & Fallback ---
+  useEffect(() => {
+      if (activeProjectId) {
+          localStorage.setItem('rpg_forge_active_project_id', activeProjectId);
+      }
+      
+      // Fallback if active project ID is invalid or null but projects exist
+      // Only runs if projects are loaded
+      if (projects.length > 0) {
+          const isValid = projects.some(p => p.id === activeProjectId);
+          if (!isValid || !activeProjectId) {
+              setActiveProjectId(projects[0].id);
+          }
+      }
+  }, [activeProjectId, projects]);
 
   // --- EFFECT: Sync Local Name Settings with Active Project ---
   useEffect(() => {
@@ -163,15 +190,7 @@ const App: React.FC = () => {
           updatedAt: Date.now(),
           folders: [],
           characters: [],
-          settings: {
-              lockedStylePre: '',
-              lockedStylePost: '',
-              useMarkovNameGen: false,
-              markovSeeds: [],
-              markovOrder: 2,
-              markovMinLength: 4,
-              markovMaxLength: 12
-          }
+          settings: { ...DEFAULT_PROJECT_SETTINGS }
       };
       setProjects(prev => [...prev, newProj]);
       setActiveProjectId(newProj.id);
