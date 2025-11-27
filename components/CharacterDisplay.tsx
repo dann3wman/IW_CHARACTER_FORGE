@@ -40,29 +40,17 @@ const CharacterDisplay: React.FC<CharacterDisplayProps> = ({
   onRegeneratePrompts
 }) => {
   return (
-    <div className="p-4 md:p-8 max-w-5xl mx-auto animate-fadeIn pb-24 space-y-4">
+    <div className="p-4 md:p-8 max-w-5xl mx-auto animate-fadeIn pb-24">
     {/* Display Header */}
-    <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
-        <div className="flex flex-wrap gap-2 items-center">
-            <span className="text-xs text-gray-500 bg-gray-900 px-2 py-1 rounded border border-gray-800" aria-label={`Active project ${projectName}`}>
+    <div className="flex justify-between items-center mb-6">
+        <div className="flex gap-2">
+            <span className="text-xs text-gray-500 bg-gray-900 px-2 py-1 rounded border border-gray-800">
                 Project: {projectName}
             </span>
-            <span className="text-[11px] text-gray-400 bg-gray-900 px-2 py-1 rounded border border-gray-800" aria-live="polite">
-              {isImageGenerating ? 'Generating portrait' : 'Portrait ready'}
-            </span>
         </div>
-        <div className="flex flex-col sm:flex-row gap-2 w-full md:w-auto">
-            <button
-              onClick={onSave}
-              className="flex-1 md:flex-none justify-center flex items-center gap-2 bg-green-900/30 hover:bg-green-900/50 text-green-300 border border-green-800 px-3 py-2 rounded-lg transition-colors text-sm font-medium focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-green-500"
-            >
+        <div className="flex gap-2">
+            <button onClick={onSave} className="flex items-center gap-2 bg-green-900/30 hover:bg-green-900/50 text-green-400 border border-green-800 px-3 py-1.5 rounded transition-colors text-sm font-medium">
                 <Save size={16} /> Save to Project
-            </button>
-            <button
-              onClick={onExport}
-              className="flex-1 md:flex-none justify-center flex items-center gap-2 bg-gray-800 hover:bg-gray-700 text-gray-200 border border-gray-700 px-3 py-2 rounded-lg transition-colors text-sm font-medium focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-mythic-500"
-            >
-              <Download size={16} /> Export JSON
             </button>
         </div>
     </div>
@@ -70,13 +58,10 @@ const CharacterDisplay: React.FC<CharacterDisplayProps> = ({
     <div className="flex flex-col md:flex-row gap-8 mb-8">
        {/* Portrait Column */}
        <div className="md:w-1/3 flex flex-col gap-4">
-          <div
-            className={`relative w-full rounded-xl overflow-hidden border-2 border-gray-800 shadow-2xl bg-gray-900 group ${aspectRatio === "9:16" ? "aspect-[9/16]" : aspectRatio === "16:9" ? "aspect-[16/9]" : aspectRatio === "1:1" ? "aspect-square" : "aspect-[3/4]"}`}
-            aria-busy={isImageGenerating}
-          >
+          <div className={`relative w-full rounded-xl overflow-hidden border-2 border-gray-800 shadow-2xl bg-gray-900 group ${aspectRatio === "9:16" ? "aspect-[9/16]" : aspectRatio === "16:9" ? "aspect-[16/9]" : aspectRatio === "1:1" ? "aspect-square" : "aspect-[3/4]"}`}>
             {character.portrait ? (
-                <img
-                    src={character.portrait}
+                <img 
+                    src={character.portrait} 
                     alt={character.name} 
                     className={`w-full h-full object-cover transition-opacity duration-500 ${isImageGenerating ? 'opacity-50 blur-sm' : 'opacity-100'}`}
                 />
@@ -100,15 +85,14 @@ const CharacterDisplay: React.FC<CharacterDisplayProps> = ({
             )}
             
             {/* Image Controls Overlay */}
-            <div className="absolute bottom-4 right-4 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity flex flex-col items-end gap-2">
+            <div className="absolute bottom-4 right-4 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-end gap-2">
                  <div className="flex gap-2">
                     {/* Aspect Ratio */}
                     <div className="bg-black/70 backdrop-blur-md rounded-lg p-1 border border-gray-600 flex items-center" title="Aspect Ratio">
                         <span className="p-1 text-gray-400"><Ratio size={14} /></span>
-                        <select
+                        <select 
                             value={aspectRatio}
                             onChange={(e) => onSetAspectRatio(e.target.value)}
-                            aria-label="Aspect ratio"
                             className="bg-transparent text-xs text-white border-none focus:ring-0 cursor-pointer px-1 outline-none appearance-none"
                         >
                             {ASPECT_RATIOS.map(ar => <option key={ar} value={ar}>{ar}</option>)}
@@ -119,10 +103,9 @@ const CharacterDisplay: React.FC<CharacterDisplayProps> = ({
                     {/* Framing Dropdown */}
                     <div className="bg-black/70 backdrop-blur-md rounded-lg p-1 border border-gray-600 flex items-center" title="Framing">
                         <span className="p-1 text-gray-400"><Expand size={14} /></span>
-                        <select
+                        <select 
                             value={imageFraming}
                             onChange={(e) => onSetImageFraming(e.target.value as 'portrait' | 'full_body')}
-                            aria-label="Framing"
                             className="bg-transparent text-xs text-white border-none focus:ring-0 cursor-pointer px-1 outline-none appearance-none"
                         >
                             <option value="portrait">Portrait</option>
@@ -133,10 +116,9 @@ const CharacterDisplay: React.FC<CharacterDisplayProps> = ({
                     {/* Size Dropdown */}
                     <div className="bg-black/70 backdrop-blur-md rounded-lg p-1 border border-gray-600 flex items-center" title="Resolution">
                         <span className="p-1 text-gray-400"><Monitor size={14} /></span>
-                        <select
+                        <select 
                             value={imageSize}
                             onChange={(e) => onSetImageSize(e.target.value as '1K' | '2K' | '4K')}
-                            aria-label="Image size"
                             className="bg-transparent text-xs text-white border-none focus:ring-0 cursor-pointer px-1 outline-none appearance-none"
                         >
                             <option value="1K">1K</option>
@@ -147,16 +129,16 @@ const CharacterDisplay: React.FC<CharacterDisplayProps> = ({
                  </div>
                  
                  <div className="flex gap-2">
-                    <button onClick={onOpenPromptModal} className="bg-black/70 hover:bg-black/90 text-white p-2 rounded-lg backdrop-blur-sm border border-gray-600 focus-visible:outline focus-visible:outline-2 focus-visible:outline-mythic-500" title="Edit Prompt">
+                    <button onClick={onOpenPromptModal} className="bg-black/70 hover:bg-black/90 text-white p-2 rounded-lg backdrop-blur-sm border border-gray-600" title="Edit Prompt">
                         <Edit3 size={20} />
                     </button>
-                    <button onClick={onQuickGenImage} disabled={isImageGenerating} className="bg-black/70 hover:bg-black/90 text-white p-2 rounded-lg backdrop-blur-sm border border-gray-600 disabled:opacity-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-mythic-500" title="Regenerate">
+                    <button onClick={onQuickGenImage} disabled={isImageGenerating} className="bg-black/70 hover:bg-black/90 text-white p-2 rounded-lg backdrop-blur-sm border border-gray-600" title="Regenerate">
                         <ImageIcon size={20} />
                     </button>
-                </div>
+                 </div>
             </div>
           </div>
-
+          
           <div className="bg-gray-900 rounded-lg p-4 border border-gray-800 relative group/prompts">
               <div className="flex justify-between items-start mb-2">
                   <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider flex items-center gap-2">
@@ -177,6 +159,9 @@ const CharacterDisplay: React.FC<CharacterDisplayProps> = ({
               </div>
           </div>
           
+          <button onClick={onExport} className="w-full bg-gray-800 hover:bg-gray-700 text-gray-300 py-2 px-4 rounded-lg border border-gray-700 flex items-center justify-center gap-2 transition-colors">
+             <Download size={16} /> Export JSON
+          </button>
        </div>
 
        {/* Stats & Info Column */}

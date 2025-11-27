@@ -60,16 +60,13 @@ const Sidebar: React.FC<SidebarProps> = ({
   const [isMobileCollapsed, setIsMobileCollapsed] = useState(true);
 
   return (
-    <div className={`w-full md:w-[380px] bg-gray-900 border-b md:border-b-0 md:border-r border-gray-800 flex flex-col md:h-screen relative z-20 shadow-2xl order-1 md:order-2 transition-all duration-300 ${isMobileCollapsed ? 'h-auto max-h-[140px] md:max-h-full' : 'h-[80vh]'}`}>
-
+    <div className={`w-full md:w-[380px] bg-gray-900 border-b md:border-b-0 md:border-r border-gray-800 flex flex-col md:h-screen relative z-20 shadow-2xl order-1 md:order-2 transition-all duration-300 ${isMobileCollapsed ? 'h-auto max-h-[120px] md:max-h-full' : 'h-[80vh]'}`}>
+      
       {/* Mobile Collapse Toggle */}
-      <button
+      <button 
         onClick={() => setIsMobileCollapsed(!isMobileCollapsed)}
-        aria-expanded={!isMobileCollapsed}
-        aria-controls="sidebar-content"
-        className="md:hidden w-full flex items-center justify-center gap-2 p-2 bg-gray-900 border-t border-gray-800 text-gray-300 absolute bottom-0 left-0 z-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-mythic-500"
+        className="md:hidden w-full flex items-center justify-center p-1 bg-gray-900 border-t border-gray-800 text-gray-500 absolute bottom-0 left-0 z-50"
       >
-        <span className="text-xs font-semibold">{isMobileCollapsed ? 'Expand tools' : 'Hide tools'}</span>
         {isMobileCollapsed ? <ChevronDown size={16} /> : <ChevronUp size={16} />}
       </button>
 
@@ -98,10 +95,7 @@ const Sidebar: React.FC<SidebarProps> = ({
       </div>
 
       {/* Content Area */}
-      <div
-        id="sidebar-content"
-        className={`flex-1 overflow-y-auto custom-scrollbar p-4 ${isMobileCollapsed ? 'hidden md:block' : 'block'}`}
-      >
+      <div className={`flex-1 overflow-y-auto custom-scrollbar p-4 ${isMobileCollapsed ? 'hidden md:block' : 'block'}`}>
         
         {activeTab === 'forge' && (
           <div className="space-y-6 pb-20">

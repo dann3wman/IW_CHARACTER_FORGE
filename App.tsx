@@ -13,7 +13,6 @@ import PromptEditorModal from './components/PromptEditorModal';
 import NavRail from './components/NavRail';
 import Sidebar from './components/Sidebar';
 import Workspace from './components/Workspace';
-import MobileNavBar from './components/MobileNavBar';
 
 const App: React.FC = () => {
   // --- STATE ---
@@ -459,83 +458,54 @@ const App: React.FC = () => {
   }
 
   return (
-    <div className="min-h-screen bg-black text-gray-100 flex flex-col md:flex-row overflow-hidden font-sans pb-24 md:pb-0">
-      <a
-        href="#main-content"
-        className="sr-only focus:not-sr-only focus:absolute focus:top-4 focus:left-4 focus:z-50 bg-mythic-600 text-white px-4 py-2 rounded"
-      >
-        Skip to main content
-      </a>
-
-      <div className="md:hidden sticky top-0 z-30 bg-gradient-to-b from-black via-gray-950 to-black px-4 py-3 border-b border-gray-900 flex items-center justify-between">
-        <div>
-          <p className="text-[11px] uppercase text-gray-500 tracking-widest">{activeTab === 'forge' ? 'Forge' : 'Library'} Mode</p>
-          <p className="text-sm font-semibold text-gray-200">{activeProject?.name || 'No project selected'}</p>
-        </div>
-        <div className="flex items-center gap-2 text-[11px] text-gray-400" aria-live="polite">
-          {isGenerating && <span className="flex items-center gap-1 bg-mythic-900/50 text-mythic-200 px-2 py-1 rounded-full border border-mythic-800">Forging…</span>}
-          {isImageGenerating && <span className="flex items-center gap-1 bg-gray-800 text-gray-200 px-2 py-1 rounded-full border border-gray-700">Imagery</span>}
-        </div>
-      </div>
-
+    <div className="min-h-screen bg-black text-gray-100 flex flex-col md:flex-row overflow-hidden font-sans">
+      
       {/* 1. Navigation Rail */}
-      <NavRail
+      <NavRail 
         activeTab={activeTab}
         onTabChange={setActiveTab}
         onOpenSettings={() => setIsSettingsModalOpen(true)}
       />
 
-      <main id="main-content" className="flex-1 flex flex-col md:flex-row">
-        {/* 2. Context Sidebar (Tags or Projects) */}
-        <Sidebar
-          activeTab={activeTab}
-          projects={projects}
-          activeProjectId={activeProjectId}
-          selectedTags={selectedTags}
-          isGenerating={isGenerating}
-          onSelectProject={setActiveProjectId}
-          onCreateProject={handleCreateProject}
-          onDeleteProject={handleDeleteProject}
-          onToggleTag={handleToggleTag}
-          onSuggestTags={handleSuggestTags}
-          onClearTags={handleClearTags}
-          isAnalyzingTags={isSuggestingTags}
-          onGenerate={handleGenerate}
-          onOpenGenSettings={() => setShowGenSettings(true)}
-          onOrganizeAI={(pid) => handleOrganizeAI(pid)}
-          onLoadCharacter={handleLoadCharacter}
-          onDeleteCharacter={handleDeleteCharacter}
-          onCreateFolder={handleCreateFolder}
-        />
-
-        {/* 3. Main Workspace */}
-        <Workspace
-          character={character}
-          isGenerating={isGenerating}
-          projectName={activeProject?.name || 'None'}
-          isImageGenerating={isImageGenerating}
-          imageSize={imageSize}
-          imageFraming={imageFraming}
-          aspectRatio={aspectRatio}
-          onSave={handleSaveCharacter}
-          onExport={handleExportJson}
-          onQuickGenImage={handleQuickGenerateImage}
-          onOpenPromptModal={handleOpenPromptModal}
-          onSetImageSize={setImageSize}
-          onSetImageFraming={setImageFraming}
-          onSetAspectRatio={setAspectRatio}
-          onRegeneratePrompts={handleRegeneratePrompts}
-        />
-      </main>
-
-      <MobileNavBar
+      {/* 2. Context Sidebar (Tags or Projects) */}
+      <Sidebar 
         activeTab={activeTab}
+        projects={projects}
+        activeProjectId={activeProjectId}
+        selectedTags={selectedTags}
         isGenerating={isGenerating}
-        onTabChange={setActiveTab}
-        onForge={() => {
-          handleGenerate();
-        }}
-        onOpenSettings={() => setIsSettingsModalOpen(true)}
+        onSelectProject={setActiveProjectId}
+        onCreateProject={handleCreateProject}
+        onDeleteProject={handleDeleteProject}
+        onToggleTag={handleToggleTag}
+        onSuggestTags={handleSuggestTags}
+        onClearTags={handleClearTags}
+        isAnalyzingTags={isSuggestingTags}
+        onGenerate={handleGenerate}
+        onOpenGenSettings={() => setShowGenSettings(true)}
+        onOrganizeAI={(pid) => handleOrganizeAI(pid)}
+        onLoadCharacter={handleLoadCharacter}
+        onDeleteCharacter={handleDeleteCharacter}
+        onCreateFolder={handleCreateFolder}
+      />
+
+      {/* 3. Main Workspace */}
+      <Workspace 
+        character={character}
+        isGenerating={isGenerating}
+        projectName={activeProject?.name || 'None'}
+        isImageGenerating={isImageGenerating}
+        imageSize={imageSize}
+        imageFraming={imageFraming}
+        aspectRatio={aspectRatio}
+        onSave={handleSaveCharacter}
+        onExport={handleExportJson}
+        onQuickGenImage={handleQuickGenerateImage}
+        onOpenPromptModal={handleOpenPromptModal}
+        onSetImageSize={setImageSize}
+        onSetImageFraming={setImageFraming}
+        onSetAspectRatio={setAspectRatio}
+        onRegeneratePrompts={handleRegeneratePrompts}
       />
 
       {/* Modals */}
