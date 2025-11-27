@@ -1,7 +1,6 @@
-
 import { GoogleGenAI, Type, Schema } from "@google/genai";
-import { TopLevelSchema, PortraitPromptDetails, SavedCharacter } from '../types';
-import { DEFAULT_SKILL_KEYS } from '../constants';
+import { TopLevelSchema, PortraitPromptDetails, SavedCharacter, ImageGenerationRule, PossibleCharacter } from '../types';
+import { DEFAULT_SKILL_KEYS, CATEGORY_DEFINITIONS } from '../constants';
 
 // NOTE: We do NOT instantiate the client globally here to avoid reading process.env.API_KEY 
 // before the user has selected it in the UI.
@@ -11,6 +10,10 @@ interface GenerateOptions {
   fixedName?: string;
   fixedStylePre?: string;
   fixedStylePost?: string;
+  imageGenerationRules?: ImageGenerationRule[];
+  namingConvention?: string;
+  regeneratePromptsOnly?: boolean;
+  existingCharacter?: PossibleCharacter;
 }
 
 /**
@@ -33,7 +36,7 @@ const cleanAndParseJSON = (text: string) => {
 };
 
 export const generateCharacterData = async (options: GenerateOptions): Promise<TopLevelSchema> => {
-  const { tags, fixedName, fixedStylePre, fixedStylePost } = options;
+  const { tags, fixedName, fixedStylePre, fixedStylePost, imageGenerationRules, namingConvention, regeneratePromptsOnly, existingCharacter } = options;
   
   // Initialize inside function to ensure we get the latest key
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
@@ -43,16 +46,24 @@ export const generateCharacterData = async (options: GenerateOptions): Promise<T
   const userSelectedSkills = tags['skills'] || [];
   const activeSkills = userSelectedSkills.length > 0 ? userSelectedSkills : DEFAULT_SKILL_KEYS;
 
-  // Extract description formatting tags
+  // Extract special tags
   const descriptionStructureTags = tags['description_elements'] || [];
+  const authorStyleTags = tags['author_style'] || [];
 
-  // Construct a prompt from tags
+  // Construct a prompt from tags, EXCLUDING author_style to prevent it from influencing visual prompts
   let tagString = "";
   Object.entries(tags).forEach(([category, tagList]) => {
+    if (category === 'author_style') return; 
     if (tagList.length > 0) {
       tagString += `${category}: ${tagList.join(", ")}\n`;
     }
   });
+
+  // Author Style Instruction
+  let styleInstruction = "";
+  if (authorStyleTags.length > 0) {
+      styleInstruction = `\nWRITING STYLE: The textual descriptions (excluding image prompts) must be written in the following style/tone: ${authorStyleTags.join(", ")}.`;
+  }
 
   // Build specialized instructions for the description field
   let descriptionInstruction = "";
@@ -72,8 +83,10 @@ export const generateCharacterData = async (options: GenerateOptions): Promise<T
     1. "single value" -> Output the emoji + name of the element followed by the value (e.g., "🎂 Age: 25").
     2. "text block {x}s" -> Output the emoji + name of the element as a header, followed by a newline and the text block of exactly {x} sentences.
     3. "text block {x}p" -> Output the emoji + name of the element as a header, followed by a newline and the text block of exactly {x} paragraphs.
+    4. "text block {x}w" -> Output the emoji + name of the element as a header, followed by a newline and the text block of approximately {x} words.
     
     Combine all these parts into the single 'description' string.
+    ${styleInstruction}
     `;
   } else {
     descriptionInstruction = `
@@ -84,12 +97,21 @@ export const generateCharacterData = async (options: GenerateOptions): Promise<T
     2. Use a relevant emoji as a header for each section (e.g. 👁️ Appearance, 🧠 Personality, 📖 Background).
     3. Separate each section with double newlines (\\n\\n) to ensure maximum readability and whitespace.
     4. Write as a coherent narrative within those sections.
+    ${styleInstruction}
     `;
   }
 
-  const nameInstruction = fixedName 
-    ? `Use the name "${fixedName}" for the character. Design the character details to fit this name.` 
-    : "Generate a unique, creative name fitting the Genre and Source tags. Ensure the name is distinct and non-repetitive.";
+  // Name Instruction Logic
+  let nameInstruction = "";
+  if (fixedName) {
+      nameInstruction = `Use the name "${fixedName}" for the character. Design the character details to fit this name.`;
+  } else {
+      const namingStyleInfo = namingConvention ? `Follow this naming convention/style: "${namingConvention}".` : "";
+      nameInstruction = `
+      Generate a unique, creative name fitting the Genre and Source tags. ${namingStyleInfo}
+      Ensure the name is distinct and non-repetitive. Avoid cliche RPG names (e.g., avoid "Luna", "Shadow", "Raven", "Nova") unless fitting for the specific Source.
+      `;
+  }
 
   const stylePreInstruction = fixedStylePre
     ? `Set 'illustrStylePre' to EXACTLY: "${fixedStylePre}".`
@@ -99,25 +121,76 @@ export const generateCharacterData = async (options: GenerateOptions): Promise<T
     ? `Set 'illustrStylePost' to EXACTLY: "${fixedStylePost}".`
     : "Generate 'illustrStylePost' with lighting/detail keywords (e.g., 'cinematic lighting, 8k').";
 
-  const systemInstruction = `
-    You are an expert RPG character designer. Create a unique, detailed character based on the user's provided tags.
-    Adhere strictly to the requested relationships, personality, and appearance.
-    
-    ${nameInstruction}
-    
-    The 'skills' object in the character definition must use exactly these keys: ${activeSkills.join(", ")}.
-    Values for skills MUST be integers between 1 and 5. 1 is novice, 5 is master/legendary.
-    
-    The 'portraitPromptDetails' must provide vivid visual descriptions suitable for an AI image generator.
-    - ${stylePreInstruction}
-    - ${stylePostInstruction}
-    - 'illustrAppearance': The character's physical features.
-    - 'illustrClothes': What they are wearing.
-    - 'illustrExpressionPosition': Pose and facial expression.
-    - 'illustrSetting': The immediate background/environment.
+  // Build custom image prompt rules instructions
+  let imageRulesInstruction = "";
+  if (imageGenerationRules && imageGenerationRules.length > 0) {
+      imageRulesInstruction = `
+      CRITICAL: You must follow these specific instructions when generating the 'portraitPromptDetails' fields:
+      `;
+      imageGenerationRules.forEach(rule => {
+          if (rule.target === 'all') {
+              imageRulesInstruction += `- For ALL portrait fields: ${rule.instruction}\n`;
+          } else {
+              imageRulesInstruction += `- For '${rule.target}': ${rule.instruction}\n`;
+          }
+      });
+  }
 
-    ${descriptionInstruction}
-  `;
+  let systemInstruction = "";
+  let contentPrompt = "";
+
+  if (regeneratePromptsOnly && existingCharacter) {
+      // REGENERATION MODE
+      systemInstruction = `
+        You are an expert visual prompt engineer.
+        The user wants to regenerate the visual art prompts ('portraitPromptDetails') for an existing character.
+        Retain the character's identity, name, and core concept, but describe them visually in a new way or with more detail based on the rules.
+        
+        Existing Character Name: ${existingCharacter.name}
+        Existing Description Summary: ${existingCharacter.description.substring(0, 200)}...
+        
+        The 'portraitPromptDetails' must provide vivid visual descriptions suitable for an AI image generator.
+        - ${stylePreInstruction}
+        - ${stylePostInstruction}
+        - 'illustrAppearance': The character's physical features.
+        - 'illustrClothes': What they are wearing.
+        - 'illustrExpressionPosition': Pose and facial expression.
+        - 'illustrSetting': The immediate background/environment.
+        
+        ${imageRulesInstruction}
+        
+        IMPORTANT:
+        - Keep 'name', 'description', 'characterId', 'skills', 'initialTrackedItemValues' EXACTLY as provided in the input JSON.
+        - ONLY modify the 'portraitPromptDetails' object.
+      `;
+      
+      contentPrompt = `Regenerate the visual prompts for this character based on these tags:\n${tagString}\n\nExisting Character JSON:\n${JSON.stringify(existingCharacter)}`;
+
+  } else {
+      // CREATION MODE
+      systemInstruction = `
+        You are an expert RPG character designer. Create a unique, detailed character based on the user's provided tags.
+        Adhere strictly to the requested relationships, personality, and appearance.
+        
+        ${nameInstruction}
+        
+        The 'skills' object in the character definition must use exactly these keys: ${activeSkills.join(", ")}.
+        Values for skills MUST be integers between 1 and 5. 1 is novice, 5 is master/legendary.
+        
+        The 'portraitPromptDetails' must provide vivid visual descriptions suitable for an AI image generator.
+        - ${stylePreInstruction}
+        - ${stylePostInstruction}
+        - 'illustrAppearance': The character's physical features.
+        - 'illustrClothes': What they are wearing.
+        - 'illustrExpressionPosition': Pose and facial expression.
+        - 'illustrSetting': The immediate background/environment.
+        
+        ${imageRulesInstruction}
+
+        ${descriptionInstruction}
+      `;
+      contentPrompt = `Generate a character based on these tags:\n${tagString}`;
+  }
 
   // Dynamically build skill properties for schema
   const skillProperties: Record<string, any> = {};
@@ -180,7 +253,7 @@ export const generateCharacterData = async (options: GenerateOptions): Promise<T
   try {
     const response = await ai.models.generateContent({
       model,
-      contents: `Generate a character based on these tags:\n${tagString}`,
+      contents: contentPrompt,
       config: {
         systemInstruction,
         responseMimeType: "application/json",
@@ -223,7 +296,7 @@ export const constructImagePrompt = (details: PortraitPromptDetails): string => 
   return prompt;
 };
 
-export const generateCharacterImage = async (prompt: string, size: '1K' | '2K' | '4K'): Promise<string> => {
+export const generateCharacterImage = async (prompt: string, size: '1K' | '2K' | '4K', aspectRatio: string = "3:4"): Promise<string> => {
     const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
     const model = 'gemini-3-pro-image-preview';
     
@@ -235,7 +308,7 @@ export const generateCharacterImage = async (prompt: string, size: '1K' | '2K' |
         },
         config: {
           imageConfig: {
-             aspectRatio: "3:4",
+             aspectRatio: aspectRatio,
              imageSize: size
           }
         }
@@ -260,7 +333,7 @@ export const generateCharacterImage = async (prompt: string, size: '1K' | '2K' |
 
 // --- New AI Helper Functions for Project Management ---
 
-export const generateSeedNames = async (tags: Record<string, string[]>): Promise<string[]> => {
+export const generateSeedNames = async (tags: Record<string, string[]>, namingConvention?: string): Promise<string[]> => {
     const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
     const model = "gemini-2.5-flash";
 
@@ -270,7 +343,9 @@ export const generateSeedNames = async (tags: Record<string, string[]>): Promise
 
     let prompt = `Generate a JSON array of 60 unique, distinct names`;
     
-    if (source && source !== "Original Character") {
+    if (namingConvention) {
+        prompt += ` that strictly follow this naming convention: "${namingConvention}".`;
+    } else if (source && source !== "Original Character") {
         prompt += ` based on the lore, linguistics, and naming conventions of "${source}". 
         Include names of minor characters, locations, or deities from this setting that serve as good linguistic roots for a Markov chain generator.`;
     } else if (identity) {
@@ -278,8 +353,13 @@ export const generateSeedNames = async (tags: Record<string, string[]>): Promise
     } else {
         prompt += ` suitable for a generic RPG character.`;
     }
-    
-    prompt += ` Return ONLY the JSON array of strings.`;
+
+    prompt += `
+    CRITICAL: 
+    - Ensure names vary in length and starting letter to provide good training data.
+    - Avoid overused names like "Luna", "Shadow", "Nova", "Raven" unless they strictly fit the requested source/convention.
+    - Return ONLY the JSON array of strings.
+    `;
 
     const response = await ai.models.generateContent({
         model,
@@ -353,6 +433,51 @@ export const suggestFolders = async (characters: SavedCharacter[]): Promise<Reco
         return cleanAndParseJSON(response.text || "{}");
     } catch (e) {
         console.error("Failed to parse folder suggestions", e);
+        return {};
+    }
+};
+
+export const suggestTagsFromDescription = async (description: string): Promise<Record<string, string[]>> => {
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    const model = "gemini-2.5-flash";
+
+    const categoriesContext = CATEGORY_DEFINITIONS.map(c => `${c.id}: ${c.description}`).join('\n');
+
+    const prompt = `Analyze the following world or adventure description and extract relevant tags for character generation.
+    
+    Description: "${description}"
+    
+    Map the extracted concepts to the following categories:
+    ${categoriesContext}
+    
+    SPECIAL RULE FOR 'description_elements':
+    Do NOT extract specific values (e.g., do NOT write 'Eyes: Blue', 'Age: 25').
+    Instead, suggest *structure definitions* for what information should be generated in the character sheet.
+    Allowed formats:
+    1. 'Key: single value' (for short stats, names, physical traits)
+    2. 'Key: text block {N}s' (for N sentences)
+    3. 'Key: text block {N}p' (for N paragraphs)
+    4. 'Key: text block {N}w' (for N words)
+
+    Example for description_elements:
+    Input: "A high fantasy world where lineage determines magic power."
+    Output Tags: ["Magic Aptitude: single value", "Ancestral Lineage: text block 1p", "Mana Capacity: single value"]
+    
+    Return a JSON object where keys are the category IDs and values are arrays of string tags.
+    Only return categories where you found relevant tags.
+    Example: { "genre": ["Sci-Fi", "Cyberpunk"], "tone": ["Dark", "Gritty"], "description_elements": ["Cybernetics: text block 2s"] }
+    `;
+
+    const response = await ai.models.generateContent({
+        model,
+        contents: prompt,
+        config: { responseMimeType: "application/json" }
+    });
+
+    try {
+        return cleanAndParseJSON(response.text || "{}");
+    } catch (e) {
+        console.error("Failed to parse tag suggestions", e);
         return {};
     }
 };

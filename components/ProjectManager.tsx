@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Project, SavedCharacter, Folder } from '../types';
-import { Folder as FolderIcon, FolderPlus, Plus, FileText, Trash2, Wand2, BrainCircuit, Save } from 'lucide-react';
+import { Folder as FolderIcon, FolderPlus, Plus, FileText, Trash2, Wand2 } from 'lucide-react';
 
 interface ProjectManagerProps {
   projects: Project[];
@@ -8,9 +8,7 @@ interface ProjectManagerProps {
   onSelectProject: (id: string) => void;
   onCreateProject: (name: string) => void;
   onDeleteProject: (id: string) => void;
-  onUpdateProjectSettings: (id: string, settings: Partial<Project['settings']>) => void;
   onOrganizeAI: (projectId: string) => void;
-  onAnalyzeStyleAI: (projectId: string) => void;
   onLoadCharacter: (char: SavedCharacter) => void;
   onDeleteCharacter: (projectId: string, charId: string) => void;
   onCreateFolder: (projectId: string, name: string) => void;
@@ -22,9 +20,7 @@ const ProjectManager: React.FC<ProjectManagerProps> = ({
   onSelectProject,
   onCreateProject,
   onDeleteProject,
-  onUpdateProjectSettings,
   onOrganizeAI,
-  onAnalyzeStyleAI,
   onLoadCharacter,
   onDeleteCharacter,
   onCreateFolder
@@ -98,37 +94,10 @@ const ProjectManager: React.FC<ProjectManagerProps> = ({
         </div>
 
         {activeProject && (
-            <div className="flex-1 flex flex-col min-h-0">
-                <div className="mb-4 border-t border-gray-800 pt-4">
-                    <h3 className="text-sm font-bold text-gray-400 uppercase tracking-wide mb-2 flex items-center justify-between">
-                        Project Style Settings
-                        <button 
-                            onClick={() => onAnalyzeStyleAI(activeProject.id)}
-                            className="text-xs text-mythic-400 hover:text-mythic-300 flex items-center gap-1"
-                            title="Analyze existing characters to unify style"
-                        >
-                            <BrainCircuit size={12} /> Auto-Detect
-                        </button>
-                    </h3>
-                    <div className="space-y-2">
-                        <input 
-                            type="text" 
-                            placeholder="Locked Style Pre (e.g. Anime)"
-                            value={activeProject.settings.lockedStylePre}
-                            onChange={(e) => onUpdateProjectSettings(activeProject.id, { lockedStylePre: e.target.value })}
-                            className="w-full bg-gray-950 border border-gray-700 rounded px-2 py-1.5 text-xs text-gray-300"
-                        />
-                         <input 
-                            type="text" 
-                            placeholder="Locked Style Post (e.g. Cinematic)"
-                            value={activeProject.settings.lockedStylePost}
-                            onChange={(e) => onUpdateProjectSettings(activeProject.id, { lockedStylePost: e.target.value })}
-                            className="w-full bg-gray-950 border border-gray-700 rounded px-2 py-1.5 text-xs text-gray-300"
-                        />
-                    </div>
-                </div>
-
-                <div className="flex-1 overflow-y-auto custom-scrollbar">
+            <div className="flex-1 flex flex-col min-h-0 gap-6 overflow-y-auto custom-scrollbar pr-2">
+                
+                {/* File Manager */}
+                <div className="border-t border-gray-800 pt-4 flex-1">
                      <div className="flex items-center justify-between mb-3">
                          <h3 className="text-sm font-bold text-gray-400 uppercase tracking-wide">Files</h3>
                          <div className="flex gap-2">
@@ -198,7 +167,13 @@ const ProjectManager: React.FC<ProjectManagerProps> = ({
   );
 };
 
-const CharacterRow = ({ char, onLoad, onDelete }: { char: SavedCharacter, onLoad: () => void, onDelete: () => void }) => (
+interface CharacterRowProps {
+    char: SavedCharacter;
+    onLoad: () => void;
+    onDelete: () => void;
+}
+
+const CharacterRow: React.FC<CharacterRowProps> = ({ char, onLoad, onDelete }) => (
     <div className="group flex items-center justify-between p-2 rounded hover:bg-gray-800 transition-colors">
         <button onClick={onLoad} className="flex items-center gap-2 text-left flex-1">
             <FileText size={14} className="text-gray-500 group-hover:text-mythic-400" />

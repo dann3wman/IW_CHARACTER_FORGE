@@ -61,6 +61,11 @@ export interface Folder {
   name: string;
 }
 
+export interface ImageGenerationRule {
+  target: string; // 'all', 'illustrAppearance', etc.
+  instruction: string;
+}
+
 export interface ProjectSettings {
   lockedStylePre: string;
   lockedStylePost: string;
@@ -69,6 +74,9 @@ export interface ProjectSettings {
   markovOrder: number;
   markovMinLength: number;
   markovMaxLength: number;
+  namingConvention: string; 
+  imageGenerationRules: ImageGenerationRule[];
+  defaultTags: Record<string, string[]>; // Tags applied to all chars in this project
 }
 
 export interface Project {
