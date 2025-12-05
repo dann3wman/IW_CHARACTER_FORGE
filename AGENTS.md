@@ -27,3 +27,4 @@ This document applies to all files in this repository unless a more specific `AG
 ## Pull requests and summaries
 - Keep PR descriptions concise: list the high-level changes and note any user-facing impacts or risk areas. Mention if tests were skipped and why.
 - When adding new instructions or documentation, call out the intended scope so future contributors understand where the guidance applies.
+- Keep documentation current with code changes. Whenever you update features, behaviors, or configuration, ensure the relevant docs (including `README.md` and scoped `AGENTS.md` files) reflect the new expectations.
