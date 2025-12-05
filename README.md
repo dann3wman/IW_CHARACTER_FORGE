@@ -18,3 +18,9 @@ View your app in AI Studio: https://ai.studio/apps/drive/1j9evx7fblDmbJoJKQbtG_E
 2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
 3. Run the app:
    `npm run dev`
+
+### Gemini API key flow
+
+- When running inside AI Studio, use the **Connect API Key** action to select a key. The app will block generation until a key is confirmed.
+- Outside AI Studio, provide `GEMINI_API_KEY` in your environment (e.g., `.env.local`). The app will pick it up automatically and note this in an info toast.
+- If no helper or environment key is available, the app shows an API key screen and disables generation buttons until a key is supplied.

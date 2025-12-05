@@ -1,8 +1,9 @@
-import { GoogleGenAI, Type, Schema } from "@google/genai";
+import { Type, Schema } from "@google/genai";
 import { TopLevelSchema, PortraitPromptDetails, SavedCharacter, ImageGenerationRule, PossibleCharacter } from '../types';
 import { DEFAULT_SKILL_KEYS, CATEGORY_DEFINITIONS } from '../constants';
+import { getGeminiClient } from './genaiClient';
 
-// NOTE: We do NOT instantiate the client globally here to avoid reading process.env.API_KEY 
+// NOTE: We do NOT instantiate the client globally here to avoid reading process.env.GEMINI_API_KEY
 // before the user has selected it in the UI.
 
 interface GenerateOptions {
@@ -19,7 +20,12 @@ interface GenerateOptions {
 /**
  * Helper to strip markdown code blocks if present and parse JSON.
  */
-const cleanAndParseJSON = (text: string) => {
+type ParseResult<T> = {
+  data: T;
+  errorMessage?: string;
+};
+
+const cleanAndParseJSON = <T>(text: string, fallback: T, context: string): ParseResult<T> => {
   let clean = text.trim();
   // Remove markdown code block syntax if present
   if (clean.startsWith('```json')) {
@@ -31,15 +37,56 @@ const cleanAndParseJSON = (text: string) => {
   if (clean.endsWith('```')) {
     clean = clean.replace(/```$/, '');
   }
-  
-  return JSON.parse(clean.trim());
+
+  try {
+    return { data: JSON.parse(clean.trim()) } as ParseResult<T>;
+  } catch (error) {
+    console.error(`Failed to parse ${context}`, { error, text: clean.substring(0, 500) });
+    return { data: fallback, errorMessage: `The model returned invalid ${context} data.` };
+  }
+};
+
+const ensureStringArray = (value: unknown): string[] => {
+  if (!Array.isArray(value)) return [];
+  return value.filter((entry): entry is string => typeof entry === 'string' && entry.trim().length > 0);
+};
+
+const validateStylePayload = (value: unknown): { pre: string; post: string } => {
+  const fallback = { pre: "", post: "" };
+  if (!value || typeof value !== 'object') return fallback;
+  const maybe = value as Record<string, unknown>;
+  const pre = typeof maybe.pre === 'string' ? maybe.pre : '';
+  const post = typeof maybe.post === 'string' ? maybe.post : '';
+  return { pre, post };
+};
+
+const validateFolderMap = (value: unknown): Record<string, string[]> => {
+  if (!value || typeof value !== 'object') return {};
+  return Object.entries(value as Record<string, unknown>).reduce<Record<string, string[]>>((acc, [folder, ids]) => {
+    const cleanIds = ensureStringArray(ids);
+    if (folder && cleanIds.length > 0) {
+      acc[folder] = cleanIds;
+    }
+    return acc;
+  }, {});
+};
+
+const validateTagSuggestion = (value: unknown): Record<string, string[]> => {
+  if (!value || typeof value !== 'object') return {};
+  return Object.entries(value as Record<string, unknown>).reduce<Record<string, string[]>>((acc, [category, tags]) => {
+    const cleanTags = ensureStringArray(tags);
+    if (category && cleanTags.length > 0) {
+      acc[category] = cleanTags;
+    }
+    return acc;
+  }, {});
 };
 
 export const generateCharacterData = async (options: GenerateOptions): Promise<TopLevelSchema> => {
   const { tags, fixedName, fixedStylePre, fixedStylePost, imageGenerationRules, namingConvention, regeneratePromptsOnly, existingCharacter } = options;
-  
+
   // Initialize inside function to ensure we get the latest key
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+  const ai = getGeminiClient();
   const model = "gemini-2.5-flash";
 
   // Determine skills to use: either from tags or default
@@ -264,7 +311,13 @@ export const generateCharacterData = async (options: GenerateOptions): Promise<T
 
     const text = response.text;
     if (!text) throw new Error("No text returned from API");
-    return cleanAndParseJSON(text) as TopLevelSchema;
+
+    const { data, errorMessage } = cleanAndParseJSON<TopLevelSchema>(text, { skills: [], possibleCharacters: [] }, "character definition");
+    if (errorMessage) {
+      throw new Error(errorMessage);
+    }
+
+    return data;
 
   } catch (error) {
     console.error("Error generating character JSON:", error);
@@ -297,44 +350,38 @@ export const constructImagePrompt = (details: PortraitPromptDetails): string => 
 };
 
 export const generateCharacterImage = async (prompt: string, size: '1K' | '2K' | '4K', aspectRatio: string = "3:4"): Promise<string> => {
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    const ai = getGeminiClient();
     const model = 'gemini-3-pro-image-preview';
-    
-    try {
-      const response = await ai.models.generateContent({
-        model,
-        contents: {
-          parts: [{ text: prompt }]
-        },
-        config: {
-          imageConfig: {
-             aspectRatio: aspectRatio,
-             imageSize: size
-          }
-        }
-      });
-  
-      const parts = response.candidates?.[0]?.content?.parts;
-      if (!parts) throw new Error("No content parts in image response");
 
-      for (const part of parts) {
-        if (part.inlineData && part.inlineData.data) {
-           return `data:${part.inlineData.mimeType};base64,${part.inlineData.data}`;
+    const response = await ai.models.generateContent({
+      model,
+      contents: {
+        parts: [{ text: prompt }]
+      },
+      config: {
+        imageConfig: {
+           aspectRatio: aspectRatio,
+           imageSize: size
         }
       }
-      
-      throw new Error("No image data found in response");
-  
-    } catch (error) {
-      console.error("Error generating image:", error);
-      return `https://picsum.photos/512/768?random=${Date.now()}`;
+    });
+
+    const parts = response.candidates?.[0]?.content?.parts;
+    if (!parts) throw new Error("No content parts in image response");
+
+    for (const part of parts) {
+      if (part.inlineData && part.inlineData.data) {
+         return `data:${part.inlineData.mimeType};base64,${part.inlineData.data}`;
+      }
     }
+
+    throw new Error("No image data found in response");
   };
 
 // --- New AI Helper Functions for Project Management ---
 
 export const generateSeedNames = async (tags: Record<string, string[]>, namingConvention?: string): Promise<string[]> => {
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    const ai = getGeminiClient();
     const model = "gemini-2.5-flash";
 
     const source = tags['source']?.join(", ");
@@ -367,18 +414,20 @@ export const generateSeedNames = async (tags: Record<string, string[]>, namingCo
         config: { responseMimeType: "application/json" }
     });
 
-    try {
-        return cleanAndParseJSON(response.text || "[]");
-    } catch (e) {
-        console.error("Failed to parse names", e);
-        return [];
+    const { data, errorMessage } = cleanAndParseJSON<string[]>(response.text || "[]", [], "seed names");
+    const names = ensureStringArray(data);
+
+    if (errorMessage) {
+      throw new Error(errorMessage);
     }
+
+    return names;
 };
 
 export const analyzeProjectStyle = async (characters: SavedCharacter[]): Promise<{ pre: string, post: string }> => {
     if (characters.length === 0) return { pre: "", post: "" };
 
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    const ai = getGeminiClient();
     const model = "gemini-2.5-flash";
 
     const examples = characters.slice(0, 10).map(c => 
@@ -398,16 +447,18 @@ export const analyzeProjectStyle = async (characters: SavedCharacter[]): Promise
         config: { responseMimeType: "application/json" }
     });
 
-    try {
-        return cleanAndParseJSON(response.text || '{"pre":"", "post":""}');
-    } catch (e) {
-        console.error("Failed to parse style analysis", e);
-        return { pre: "", post: "" };
+    const { data, errorMessage } = cleanAndParseJSON(response.text || '{"pre":"", "post":""}', { pre: "", post: "" }, "style analysis");
+    const validated = validateStylePayload(data);
+
+    if (errorMessage) {
+      throw new Error(errorMessage);
     }
+
+    return validated;
 };
 
 export const suggestFolders = async (characters: SavedCharacter[]): Promise<Record<string, string[]>> => {
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    const ai = getGeminiClient();
     const model = "gemini-2.5-flash";
 
     const inputList = characters.map(c => ({
@@ -429,16 +480,18 @@ export const suggestFolders = async (characters: SavedCharacter[]): Promise<Reco
         config: { responseMimeType: "application/json" }
     });
 
-    try {
-        return cleanAndParseJSON(response.text || "{}");
-    } catch (e) {
-        console.error("Failed to parse folder suggestions", e);
-        return {};
+    const { data, errorMessage } = cleanAndParseJSON(response.text || "{}", {}, "folder suggestions");
+    const validated = validateFolderMap(data);
+
+    if (errorMessage) {
+      throw new Error(errorMessage);
     }
+
+    return validated;
 };
 
 export const suggestTagsFromDescription = async (description: string): Promise<Record<string, string[]>> => {
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    const ai = getGeminiClient();
     const model = "gemini-2.5-flash";
 
     const categoriesContext = CATEGORY_DEFINITIONS.map(c => `${c.id}: ${c.description}`).join('\n');
@@ -474,10 +527,12 @@ export const suggestTagsFromDescription = async (description: string): Promise<R
         config: { responseMimeType: "application/json" }
     });
 
-    try {
-        return cleanAndParseJSON(response.text || "{}");
-    } catch (e) {
-        console.error("Failed to parse tag suggestions", e);
-        return {};
+    const { data, errorMessage } = cleanAndParseJSON(response.text || "{}", {}, "tag suggestions");
+    const validated = validateTagSuggestion(data);
+
+    if (errorMessage) {
+      throw new Error(errorMessage);
     }
+
+    return validated;
 };
