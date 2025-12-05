@@ -3,7 +3,19 @@ import { generateCharacterData, generateCharacterImage, constructImagePrompt, ge
 import { PossibleCharacter, TopLevelSchema, Project, SavedCharacter, Folder, ProjectSettings } from './types';
 import { v4 as uuidv4 } from 'uuid';
 
-import { loadProjectsFromStorage, loadActiveProjectId, loadTagsFromStorage, loadActiveCharacterFromStorage, loadUiState } from './utils/storage';
+import {
+  clearPersistentState,
+  loadActiveCharacterFromStorage,
+  loadActiveProjectId,
+  loadProjectsFromStorage,
+  loadTagsFromStorage,
+  loadUiState,
+  saveActiveCharacterToStorage,
+  saveActiveProjectId,
+  saveProjectsToStorage,
+  saveTagsToStorage,
+  saveUiState
+} from './utils/storage';
 
 // Components
 import ApiKeyScreen from './components/ApiKeyScreen';
@@ -16,29 +28,35 @@ import Workspace from './components/Workspace';
 
 const App: React.FC = () => {
   // --- STATE ---
-  const uiState = loadUiState();
-  
+  const DEFAULT_UI_STATE = {
+    activeTab: 'forge' as const,
+    imageSize: '1K' as const,
+    imageFraming: 'portrait' as const,
+    aspectRatio: '3:4'
+  };
+  const [isHydrated, setIsHydrated] = useState(false);
+
   // Navigation
-  const [activeTab, setActiveTab] = useState<'forge' | 'projects'>(uiState.activeTab);
+  const [activeTab, setActiveTab] = useState<'forge' | 'projects'>(DEFAULT_UI_STATE.activeTab);
 
   // Tag Selection
-  const [selectedTags, setSelectedTags] = useState<Record<string, string[]>>(() => loadTagsFromStorage());
+  const [selectedTags, setSelectedTags] = useState<Record<string, string[]>>({});
   
   // App Logic
   const [isGenerating, setIsGenerating] = useState(false);
   const [isImageGenerating, setIsImageGenerating] = useState(false);
-  const [character, setCharacter] = useState<PossibleCharacter | null>(() => loadActiveCharacterFromStorage());
+  const [character, setCharacter] = useState<PossibleCharacter | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isSuggestingTags, setIsSuggestingTags] = useState(false);
   
   // Image Settings
-  const [imageSize, setImageSize] = useState<'1K' | '2K' | '4K'>(uiState.imageSize);
-  const [imageFraming, setImageFraming] = useState<'portrait' | 'full_body'>(uiState.imageFraming);
-  const [aspectRatio, setAspectRatio] = useState<string>(uiState.aspectRatio);
+  const [imageSize, setImageSize] = useState<'1K' | '2K' | '4K'>(DEFAULT_UI_STATE.imageSize);
+  const [imageFraming, setImageFraming] = useState<'portrait' | 'full_body'>(DEFAULT_UI_STATE.imageFraming);
+  const [aspectRatio, setAspectRatio] = useState<string>(DEFAULT_UI_STATE.aspectRatio);
   
   // Persistence (Projects)
-  const [projects, setProjects] = useState<Project[]>(() => loadProjectsFromStorage());
-  const [activeProjectId, setActiveProjectId] = useState<string | null>(() => loadActiveProjectId());
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [activeProjectId, setActiveProjectId] = useState<string | null>(null);
 
   // Modals
   const [isPromptModalOpen, setIsPromptModalOpen] = useState(false);
@@ -52,47 +70,81 @@ const App: React.FC = () => {
 
   // --- EFFECT: Persist UI State ---
   useEffect(() => {
-      localStorage.setItem('rpg_forge_ui_state', JSON.stringify({
-          activeTab,
-          imageSize,
-          imageFraming,
-          aspectRatio
-      }));
-  }, [activeTab, imageSize, imageFraming, aspectRatio]);
+    let isMounted = true;
+
+    const hydrate = async () => {
+      const [storedUiState, storedTags, storedCharacter, storedProjects, storedActiveProjectId] = await Promise.all([
+        loadUiState(),
+        loadTagsFromStorage(),
+        loadActiveCharacterFromStorage(),
+        loadProjectsFromStorage(),
+        loadActiveProjectId()
+      ]);
+
+      if (!isMounted) return;
+
+      setActiveTab(storedUiState.activeTab);
+      setImageSize(storedUiState.imageSize);
+      setImageFraming(storedUiState.imageFraming);
+      setAspectRatio(storedUiState.aspectRatio);
+      setSelectedTags(storedTags);
+      setCharacter(storedCharacter);
+      setProjects(storedProjects);
+      setActiveProjectId(storedActiveProjectId ?? (storedProjects[0]?.id ?? null));
+      setIsHydrated(true);
+    };
+
+    hydrate();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!isHydrated) return;
+
+    void saveUiState({
+      activeTab,
+      imageSize,
+      imageFraming,
+      aspectRatio
+    });
+  }, [activeTab, imageSize, imageFraming, aspectRatio, isHydrated]);
 
   // --- EFFECT: Persist Tags & Character ---
   useEffect(() => {
-    localStorage.setItem('rpg_forge_tags', JSON.stringify(selectedTags));
-  }, [selectedTags]);
+    if (!isHydrated) return;
+
+    void saveTagsToStorage(selectedTags);
+  }, [selectedTags, isHydrated]);
 
   useEffect(() => {
-    if (character) {
-      localStorage.setItem('rpg_forge_active_char', JSON.stringify(character));
-    } else {
-      localStorage.removeItem('rpg_forge_active_char');
-    }
-  }, [character]);
+    if (!isHydrated) return;
+
+    void saveActiveCharacterToStorage(character);
+  }, [character, isHydrated]);
 
   // --- EFFECT: Persist Projects ---
   useEffect(() => {
-    if (projects.length > 0) {
-        localStorage.setItem('rpg_forge_projects', JSON.stringify(projects));
-    }
-  }, [projects]);
+    if (!isHydrated || projects.length === 0) return;
+
+    void saveProjectsToStorage(projects);
+  }, [projects, isHydrated]);
 
   // --- EFFECT: Persist Active Project ID & Fallback ---
   useEffect(() => {
-      if (activeProjectId) {
-          localStorage.setItem('rpg_forge_active_project_id', activeProjectId);
+    if (!isHydrated) return;
+
+    void saveActiveProjectId(activeProjectId);
+
+    if (projects.length > 0) {
+      const isValid = projects.some(p => p.id === activeProjectId);
+      if (!isValid || !activeProjectId) {
+        setActiveProjectId(projects[0].id);
       }
-      
-      if (projects.length > 0) {
-          const isValid = projects.some(p => p.id === activeProjectId);
-          if (!isValid || !activeProjectId) {
-              setActiveProjectId(projects[0].id);
-          }
-      }
-  }, [activeProjectId, projects]);
+    }
+  }, [activeProjectId, projects, isHydrated]);
 
   // --- EFFECT: API Key Check ---
   useEffect(() => {
@@ -130,8 +182,7 @@ const App: React.FC = () => {
 
   const handleResetData = () => {
       if (window.confirm("Are you sure you want to clear all data? This includes all projects, characters, and settings. This cannot be undone.")) {
-          localStorage.clear();
-          window.location.reload();
+          clearPersistentState().then(() => window.location.reload());
       }
   };
 
