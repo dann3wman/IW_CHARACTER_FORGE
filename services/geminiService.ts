@@ -1,5 +1,5 @@
 import { Type, Schema } from "@google/genai";
-import { TopLevelSchema, PortraitPromptDetails, SavedCharacter, ImageGenerationRule, PossibleCharacter } from '../types';
+import { TopLevelSchema, PortraitPromptDetails, SavedCharacter, ImageGenerationRule, PossibleCharacter, CharacterSkills } from '../types';
 import { DEFAULT_SKILL_KEYS, CATEGORY_DEFINITIONS } from '../constants';
 import { getGeminiClient } from './genaiClient';
 
@@ -80,6 +80,29 @@ const validateTagSuggestion = (value: unknown): Record<string, string[]> => {
     }
     return acc;
   }, {});
+};
+
+const clampSkillValue = (value: unknown, skillName: string): number => {
+  const parsed = typeof value === 'number' ? value : Number(value);
+  if (!Number.isFinite(parsed)) {
+    throw new Error(`Invalid value for skill "${skillName}". Values must be numbers between 1 and 5.`);
+  }
+
+  const rounded = Math.round(parsed);
+  const clamped = Math.min(5, Math.max(1, rounded));
+  return clamped;
+};
+
+const sanitizeCharacterSkills = (skills: unknown, expectedSkills: string[]): CharacterSkills => {
+  if (!skills || typeof skills !== 'object') {
+    throw new Error('The model returned an invalid skills object.');
+  }
+
+  return expectedSkills.reduce<CharacterSkills>((acc, skill) => {
+    const value = (skills as Record<string, unknown>)[skill];
+    acc[skill] = clampSkillValue(value, skill);
+    return acc;
+  }, {} as CharacterSkills);
 };
 
 export const generateCharacterData = async (options: GenerateOptions): Promise<TopLevelSchema> => {
@@ -317,7 +340,17 @@ export const generateCharacterData = async (options: GenerateOptions): Promise<T
       throw new Error(errorMessage);
     }
 
-    return data;
+    const expectedSkills = data.skills && data.skills.length > 0 ? data.skills : activeSkills;
+    const sanitizedCharacters = (data.possibleCharacters || []).map(character => ({
+      ...character,
+      skills: sanitizeCharacterSkills(character.skills, expectedSkills),
+    }));
+
+    return {
+      ...data,
+      skills: expectedSkills,
+      possibleCharacters: sanitizedCharacters
+    };
 
   } catch (error) {
     console.error("Error generating character JSON:", error);
