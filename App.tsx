@@ -25,6 +25,9 @@ import PromptEditorModal from './components/PromptEditorModal';
 import NavRail from './components/NavRail';
 import Sidebar from './components/Sidebar';
 import Workspace from './components/Workspace';
+import ConfirmModal from './components/ConfirmModal';
+import Toast, { ToastMessage, ToastType } from './components/Toast';
+import { setGeminiApiKey } from './services/genaiClient';
 
 const App: React.FC = () => {
   // --- STATE ---
@@ -64,9 +67,20 @@ const App: React.FC = () => {
   const [showGenSettings, setShowGenSettings] = useState(false);
   const [isFetchingSeeds, setIsFetchingSeeds] = useState(false);
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
+  const [isResetConfirmOpen, setIsResetConfirmOpen] = useState(false);
+
+  const [toasts, setToasts] = useState<ToastMessage[]>([]);
 
   // API Key
   const [hasApiKey, setHasApiKey] = useState(false);
+
+  const pushToast = (message: string, type: ToastType) => {
+    setToasts(prev => [...prev, { id: uuidv4(), message, type }]);
+  };
+
+  const dismissToast = (id: string) => {
+    setToasts(prev => prev.filter(t => t.id !== id));
+  };
 
   // --- EFFECT: Persist UI State ---
   useEffect(() => {
@@ -127,7 +141,7 @@ const App: React.FC = () => {
 
   // --- EFFECT: Persist Projects ---
   useEffect(() => {
-    if (!isHydrated || projects.length === 0) return;
+    if (!isHydrated) return;
 
     void saveProjectsToStorage(projects);
   }, [projects, isHydrated]);
@@ -149,12 +163,26 @@ const App: React.FC = () => {
   // --- EFFECT: API Key Check ---
   useEffect(() => {
     const checkKey = async () => {
-      if ((window as any).aistudio && typeof (window as any).aistudio.hasSelectedApiKey === 'function') {
-        const has = await (window as any).aistudio.hasSelectedApiKey();
-        setHasApiKey(has);
-      } else {
-        setHasApiKey(true);
+      let resolvedKey: string | null = null;
+
+      try {
+        const studio = (window as any).aistudio;
+        if (studio && typeof studio.hasSelectedApiKey === 'function') {
+          const has = await studio.hasSelectedApiKey();
+          if (has && typeof studio.getSelectedApiKey === 'function') {
+            resolvedKey = await studio.getSelectedApiKey();
+          }
+        }
+      } catch (e) {
+        console.error('Failed to verify AI Studio key', e);
       }
+
+      if (!resolvedKey && process.env.GEMINI_API_KEY) {
+        resolvedKey = process.env.GEMINI_API_KEY;
+      }
+
+      setGeminiApiKey(resolvedKey);
+      setHasApiKey(Boolean(resolvedKey));
     };
     checkKey();
   }, []);
@@ -164,14 +192,39 @@ const App: React.FC = () => {
   // --- HANDLERS ---
 
   const handleConnectKey = async () => {
-    if ((window as any).aistudio && typeof (window as any).aistudio.openSelectKey === 'function') {
+    const studio = (window as any).aistudio;
+
+    if (studio && typeof studio.openSelectKey === 'function') {
       try {
-        await (window as any).aistudio.openSelectKey();
-        setHasApiKey(true);
+        await studio.openSelectKey();
+        let selectedKey: string | null = null;
+
+        if (typeof studio.getSelectedApiKey === 'function') {
+          selectedKey = await studio.getSelectedApiKey();
+        }
+
+        setHasApiKey(Boolean(selectedKey));
+        setGeminiApiKey(selectedKey);
+
+        if (selectedKey) {
+          pushToast('API key connected', 'success');
+        } else {
+          setError("Please select an API key to continue.");
+          pushToast('Please select an API key to continue.', 'error');
+        }
       } catch (e) {
         console.error("Failed to select key", e);
         setError("Failed to select API key.");
+        pushToast('Failed to select API key.', 'error');
       }
+    } else if (process.env.GEMINI_API_KEY) {
+      setGeminiApiKey(process.env.GEMINI_API_KEY);
+      setHasApiKey(true);
+      pushToast('Using GEMINI_API_KEY from environment.', 'info');
+    } else {
+      setHasApiKey(false);
+      setError("No API key provider is available.");
+      pushToast('No API key provider is available.', 'error');
     }
   };
 
@@ -181,10 +234,17 @@ const App: React.FC = () => {
   };
 
   const handleResetData = () => {
-      if (window.confirm("Are you sure you want to clear all data? This includes all projects, characters, and settings. This cannot be undone.")) {
-          clearPersistentState().then(() => window.location.reload());
-      }
+      setIsResetConfirmOpen(true);
   };
+
+  const confirmResetData = async () => {
+      setIsResetConfirmOpen(false);
+      await clearPersistentState();
+      pushToast('All data cleared. Reloading...', 'info');
+      window.location.reload();
+  };
+
+  const cancelResetData = () => setIsResetConfirmOpen(false);
 
   // Project Management Handlers
   const handleCreateProject = (name: string) => {
@@ -257,7 +317,7 @@ const App: React.FC = () => {
       }
 
       setProjects(prev => prev.map(p => p.id === activeProjectId ? updatedProject : p));
-      alert("Character Saved to Project!");
+      pushToast('Character saved to project.', 'success');
   };
 
   const handleDeleteCharacter = (projectId: string, charId: string) => {
@@ -274,21 +334,34 @@ const App: React.FC = () => {
 
   // AI Handlers
   const handleAnalyzeStyleAI = async (projectId: string) => {
+      if (!hasApiKey) {
+          setError("Connect an API key to analyze project style.");
+          pushToast('Connect an API key to analyze project style.', 'error');
+          return;
+      }
       const proj = projects.find(p => p.id === projectId);
       if (!proj || proj.characters.length === 0) return;
       setIsGenerating(true);
       try {
         const { pre, post } = await analyzeProjectStyle(proj.characters);
         updateActiveProjectSetting({ lockedStylePre: pre, lockedStylePost: post });
-        alert("Style extracted and applied to project settings!");
+        pushToast('Style extracted and applied to project settings.', 'success');
+        setError(null);
       } catch (e) {
         console.error(e);
+        setError("Failed to analyze style. Please retry.");
+        pushToast('Failed to analyze style. Please retry.', 'error');
       } finally {
         setIsGenerating(false);
       }
   };
 
   const handleSuggestTags = async (description: string) => {
+      if (!hasApiKey) {
+          setError("Connect an API key to suggest tags.");
+          pushToast('Connect an API key to suggest tags.', 'error');
+          return;
+      }
       setIsSuggestingTags(true);
       try {
           const suggestions = await suggestTagsFromDescription(description);
@@ -302,15 +375,22 @@ const App: React.FC = () => {
               });
               return newTags;
           });
+          setError(null);
       } catch (e) {
           console.error(e);
           setError("Failed to analyze tags.");
+          pushToast('Failed to analyze tags from description.', 'error');
       } finally {
           setIsSuggestingTags(false);
       }
   };
 
   const handleOrganizeAI = async (projectId: string) => {
+      if (!hasApiKey) {
+          setError("Connect an API key to organize projects.");
+          pushToast('Connect an API key to organize projects.', 'error');
+          return;
+      }
       const proj = projects.find(p => p.id === projectId);
       if (!proj || proj.characters.length === 0) return;
       setIsGenerating(true);
@@ -330,9 +410,12 @@ const App: React.FC = () => {
               if (p.id !== projectId) return p;
               return { ...p, folders: [...p.folders, ...newFolders], characters: updatedChars };
           }));
-          alert("Project organized!");
+          pushToast('Project organized!', 'success');
+          setError(null);
       } catch (e) {
           console.error(e);
+          setError("Failed to organize project.");
+          pushToast('Failed to organize project.', 'error');
       } finally {
           setIsGenerating(false);
       }
@@ -354,16 +437,32 @@ const App: React.FC = () => {
   };
 
   const handleFetchSeeds = async () => {
+      if (!hasApiKey) {
+          setError("Connect an API key to fetch seed names.");
+          pushToast('Connect an API key to fetch seed names.', 'error');
+          return;
+      }
       setIsFetchingSeeds(true);
       try {
           const convention = activeProject?.settings.namingConvention;
           const seeds = await generateSeedNames(selectedTags, convention);
           updateActiveProjectSetting({ markovSeeds: seeds });
-      } catch (e) { console.error(e); }
+          pushToast('Seed names refreshed from Gemini.', 'success');
+          setError(null);
+      } catch (e) { 
+          console.error(e); 
+          setError("Failed to fetch seed names.");
+          pushToast('Failed to fetch seed names.', 'error');
+      }
       finally { setIsFetchingSeeds(false); }
   };
 
   const handleGenerate = async () => {
+    if (!hasApiKey) {
+        setError("Connect an API key to generate characters.");
+        pushToast('Connect an API key to generate characters.', 'error');
+        return;
+    }
     const totalTags = (Object.values(selectedTags) as string[][]).reduce((acc, curr) => acc + curr.length, 0);
     if (totalTags < 3) {
         setError("Please select at least 3 tags.");
@@ -410,15 +509,23 @@ const App: React.FC = () => {
         if (fixedStylePost) char.portraitPromptDetails.illustrStylePost = fixedStylePost;
         if (!char.characterId) char.characterId = uuidv4();
         setCharacter(char);
+        setError(null);
       }
     } catch (err: any) {
-      setError(err.message || "Failed to generate character.");
+      const message = err?.message || "Failed to generate character.";
+      setError(message);
+      pushToast(message, 'error');
     } finally {
       setIsGenerating(false);
     }
   };
 
   const handleRegeneratePrompts = async () => {
+      if (!hasApiKey) {
+          setError("Connect an API key to regenerate prompts.");
+          pushToast('Connect an API key to regenerate prompts.', 'error');
+          return;
+      }
       if (!character) return;
       setIsGenerating(true);
       try {
@@ -444,10 +551,12 @@ const App: React.FC = () => {
           if (data.possibleCharacters.length > 0) {
               const newChar = data.possibleCharacters[0];
               setCharacter(prev => prev ? { ...prev, portraitPromptDetails: newChar.portraitPromptDetails } : null);
+              setError(null);
           }
       } catch (e) {
           console.error(e);
           setError("Failed to regenerate prompts.");
+          pushToast('Failed to regenerate prompts.', 'error');
       } finally {
           setIsGenerating(false);
       }
@@ -460,12 +569,22 @@ const App: React.FC = () => {
   };
 
   const executeImageGeneration = async (prompt: string) => {
+      if (!hasApiKey) {
+        setError("Connect an API key to generate images.");
+        pushToast('Connect an API key to generate images.', 'error');
+        return;
+      }
       setIsImageGenerating(true);
       try {
         const base64Image = await generateCharacterImage(prompt, imageSize, aspectRatio);
         setCharacter(prev => prev ? { ...prev, portrait: base64Image } : null);
+        setError(null);
       } catch (err) {
         console.error("Image gen failed", err);
+        const baseMessage = err instanceof Error ? err.message : 'Image generation failed.';
+        const message = `${baseMessage} Please retry or adjust your prompt after confirming your API key.`;
+        setError(message);
+        pushToast(message, 'error');
       } finally {
         setIsImageGenerating(false);
       }
@@ -505,14 +624,27 @@ const App: React.FC = () => {
   };
 
   if (!hasApiKey) {
-      return <ApiKeyScreen onConnect={handleConnectKey} />;
+      return (
+        <>
+          <Toast toasts={toasts} onDismiss={dismissToast} />
+          <ApiKeyScreen onConnect={handleConnectKey} />
+        </>
+      );
   }
 
   return (
-    <div className="min-h-screen bg-black text-gray-100 flex flex-col md:flex-row overflow-hidden font-sans">
-      
+    <>
+      <Toast toasts={toasts} onDismiss={dismissToast} />
+      <div className="min-h-screen bg-black text-gray-100 flex flex-col md:flex-row overflow-hidden font-sans">
+
+      {error && (
+        <div className="fixed top-4 left-1/2 -translate-x-1/2 bg-red-900/40 border border-red-700 text-red-100 px-4 py-2 rounded-lg z-40 shadow-xl">
+          {error}
+        </div>
+      )}
+
       {/* 1. Navigation Rail */}
-      <NavRail 
+      <NavRail
         activeTab={activeTab}
         onTabChange={setActiveTab}
         onOpenSettings={() => setIsSettingsModalOpen(true)}
@@ -596,14 +728,24 @@ const App: React.FC = () => {
       />
 
       {/* Settings Modal */}
-      <SettingsModal 
+      <SettingsModal
         isOpen={isSettingsModalOpen}
         onClose={() => setIsSettingsModalOpen(false)}
         onChangeKey={handleChangeKey}
         onResetData={handleResetData}
       />
 
+      <ConfirmModal
+        isOpen={isResetConfirmOpen}
+        onCancel={cancelResetData}
+        onConfirm={confirmResetData}
+        title="Reset all data?"
+        description="This will clear all local projects, characters, and settings. This action cannot be undone."
+        confirmLabel="Yes, clear everything"
+      />
+
     </div>
+    </>
   );
 };
 

@@ -181,6 +181,11 @@ export const loadProjectsFromStorage = async (): Promise<Project[]> => {
 };
 
 export const saveProjectsToStorage = async (projects: Project[]) => {
+  if (projects.length === 0) {
+    await removeItem('rpg_forge_projects');
+    return;
+  }
+
   await setItem('rpg_forge_projects', projects);
 };
 
