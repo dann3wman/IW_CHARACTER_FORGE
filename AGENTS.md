@@ -17,6 +17,9 @@ This document applies to all files in this repository unless a more specific `AG
 - Do not edit files inside `node_modules/`. Add new third-party packages only when necessary and document their purpose.
 - Preserve existing formatting and naming conventions. Keep imports ordered logically (React first, then local utilities and types) and remove unused code when you touch a file.
 
+## Configuration and secrets
+- The canonical environment variable for the Gemini API key is `GEMINI_API_KEY`. Contributors may supply it either by selecting a key in AI Studio or by setting it in `.env.local` when running the app locally. Keep the documentation and runtime configuration aligned: if code uses a different variable (e.g., `process.env.API_KEY`), update the code and docs together to ensure the variable name stays consistent. This guidance applies repository-wide.
+
 ## Testing and verification
 - For changes that affect code behavior, run `npm run build` to ensure the project still compiles. Add any additional targeted checks you believe are relevant.
 - Documentation-only changes (including updates limited to Markdown) do not require running tests or build commands, but mention the skip in your summary.
